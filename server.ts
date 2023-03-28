@@ -3,6 +3,7 @@ import { json } from "body-parser";
 
 import db from "./db";
 import { MatchData, decodeXml } from "./objectModel";
+import { dataTransform } from "./dataTransform";
 const server = express();
 
 const router = express.Router();
@@ -11,8 +12,18 @@ router.get("/data", async (request, response) => {
 	response.send(await db.getAllMatches());
 });
 
+router.get("/stats", async (request, response) => {
+	const allTeams = await dataTransform.allTeams();
+	const allTeamStats = await Promise.all(allTeams.map(async teamNumber => await dataTransform.teamStats(teamNumber)));
+
+	const statsObject = {
+		teams: allTeamStats
+	}
+	response.send(statsObject);
+});
+
 router.get("/submit", async (request, response) => {
-	return response.send(`
+	response.send(`
 		<title>Submission Upload Route</title>
 		Enter this address in your scouting app to submit data
 	`);
