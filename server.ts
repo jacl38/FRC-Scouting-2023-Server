@@ -8,27 +8,29 @@ const server = express();
 
 const router = express.Router();
 
+// Aggregated team stats route
 router.get("/data", async (request, response) => {
-	response.send(await db.getAllMatches());
-});
-
-router.get("/stats", async (request, response) => {
 	const allTeams = await dataTransform.allTeams();
 	const allTeamStats = await Promise.all(allTeams.map(async teamNumber => await dataTransform.teamStats(teamNumber)));
 
 	const statsObject = {
-		teams: allTeamStats
+		matches: await db.getAllMatches(),
+		teamList: allTeams,
+		stats: {
+			teams: allTeamStats
+		}
 	}
 	response.send(statsObject);
 });
 
+
+// Upload route
 router.get("/submit", async (request, response) => {
 	response.send(`
 		<title>Submission Upload Route</title>
 		Enter this address in your scouting app to submit data
 	`);
 });
-
 router.post("/submit", async (request, response) => {
 	// Don't attempt submission if request body is empty
 	if(request.body.length === 0) return;
@@ -70,7 +72,7 @@ router.post("/submit", async (request, response) => {
 	});
 });
 
-server.use(json());
+server.use(json({limit: '50mb'}));
 server.use(router);
 
 const port = 8080;

@@ -6,7 +6,6 @@ const dbConnectString = "mongodb://127.0.0.1:27017/scouting";
 const db = {
 	init: async () => {
 		await mongoose.connect(dbConnectString);
-
 		console.log(`Scouting database connected at \x1b[96m${dbConnectString}\x1b[0m.`);
 	},
 
