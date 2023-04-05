@@ -23,7 +23,7 @@ const db = {
 		}
 	},
 
-	getAllMatches: async () => await MatchDataCollection.find().toArray() as unknown as MatchData[],
+	getAllMatches: async () => (await MatchDataCollection.find().toArray() as unknown as MatchData[]).sort((a, b) => a.matchNumber - b.matchNumber),
 }
 
 export default db;

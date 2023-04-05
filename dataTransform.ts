@@ -1,7 +1,7 @@
 import db from "./db";
-import { ChargeType, ItemType, RowTypes, TeamData, WinResult } from "./objectModel";
+import { AllianceType, ChargeType, ItemType, RowType, WinResult } from "./objectModel";
 
-const extractEmojis = (text: string) => text.match(/(\p{Emoji_Presentation}|\p{Extended_Pictographic})/gu);
+const extractEmojis = (text: string) => [...new Set(text.match(/(\p{Emoji_Presentation}|\p{Extended_Pictographic})/gu))];
 
 const sum = (items: number[]): number => items.length == 0 ? 0 : items.reduce((a, b) => a + b);
 
@@ -33,11 +33,132 @@ export const dataTransform = {
 		const allMatches = await db.getAllMatches();
 		const allTeams: Set<number> = new Set();
 		allMatches.forEach(match => {
-			allTeams.add(match.team1Data.teamInfo.teamNumber);
-			allTeams.add(match.team2Data.teamInfo.teamNumber);
-			allTeams.add(match.team3Data.teamInfo.teamNumber);
+			allTeams.add(match.team1Data.teamNumber);
+			allTeams.add(match.team2Data.teamNumber);
+			allTeams.add(match.team3Data.teamNumber);
 		});
 		return [...allTeams].sort((a, b) => a - b);
+	},
+
+	matchStats: async (matchNumber: number) => {
+		const matchStatsPerAlliance = async (matchNumber: number, alliance: AllianceType) => {
+			const matchData = (await db.getAllMatches()).find(match => match.matchNumber == matchNumber && match.alliance == alliance);
+			if(matchData == undefined) return;
+	
+			const rowValues = {
+				top: { auto: 6, teleop: 5 },
+				mid: { auto: 4, teleop: 3 },
+				low: { auto: 3, teleop: 2 },
+			}
+			
+			const teamDatas = [matchData.team1Data, matchData.team2Data, matchData.team3Data];
+			
+			const teams = teamDatas.map(t => t.teamNumber);
+
+			const scoresPerTeam = [0, 0, 0];
+			const linksPerTeam = [0, 0, 0];
+			const pointsPerTeam = [0, 0, 0];
+
+			let coopScores = 0;
+			
+			// Raw scores, coop grid, points calculation
+			RowType.forEach(row => {
+				for(let col = 0; col < 9; col++) {
+					const score = matchData?.scoreGrid[row][col];
+					if(score?.item == ItemType.none || score?.teamID == undefined) continue;
+					scoresPerTeam[score?.teamID - 1]++;
+					if(3 <= col && col <= 5) coopScores++;
+					pointsPerTeam[score?.teamID - 1] += score.auto ? rowValues[row].auto : rowValues[row].teleop;
+				}
+			});
+	
+			// Link calculation
+			RowType.forEach(row => {
+				const scoreRow = matchData?.scoreGrid[row];
+				for(let col = 0; col <= 6; col++) {
+					if(scoreRow[col + 0].item != ItemType.none
+					&& scoreRow[col + 1].item != ItemType.none
+					&& scoreRow[col + 2].item != ItemType.none) {
+						// Link found, calculate team contribution
+						linksPerTeam[scoreRow[col + 0].teamID - 1] += 1/3;
+						linksPerTeam[scoreRow[col + 1].teamID - 1] += 1/3;
+						linksPerTeam[scoreRow[col + 2].teamID - 1] += 1/3;
+						col += 3;
+					}
+				}
+			});
+
+			const autoCharging = teamDatas.map(t => t.autoCharge).filter(c => c == ChargeType.charged).length > 0;
+			const autoDocking = !autoCharging && teamDatas.map(t => t.autoCharge).filter(c => c == ChargeType.docked).length > 0;
+
+			let autoChargePoints = 0;
+			if(autoCharging) autoChargePoints += 12;
+			if(autoDocking) autoChargePoints += 8;
+
+			const endCharging = teamDatas.map(t => t.endCharge).filter(c => c == ChargeType.charged);
+			const endDocking = endCharging.length > 0 ? [] : teamDatas.map(t => t.endCharge).filter(c => c == ChargeType.docked);
+			let endChargePoints = endCharging.length * 10 + endDocking.length * 6;
+
+			const stats = {
+				matchNumber: matchNumber,
+				alliance: alliance,
+				coop: coopScores >= 3,
+				winResult: matchData.winResult,
+				teams: teams,
+				scoresPerTeam: scoresPerTeam,
+				pointsPerTeam: pointsPerTeam,
+				linksPerTeam: linksPerTeam,
+				activation: autoChargePoints + endChargePoints >= 26
+			};
+	
+			return stats;
+		};
+
+		const blueStats = await matchStatsPerAlliance(matchNumber, AllianceType.blue);
+		const redStats = await matchStatsPerAlliance(matchNumber, AllianceType.red);
+
+		if(blueStats == undefined || redStats == undefined) return;
+
+		const blueLinks = sum(blueStats?.linksPerTeam);
+		const redLinks = sum(redStats?.linksPerTeam);
+
+		const blueCoop = blueStats.coop;
+		const redCoop = redStats.coop;
+
+		const coopThreshold = blueCoop && redCoop ? 4 : 5;
+
+		let blueRankingPoints = 0;
+		let redRankingPoints = 0;
+
+		// sustainability
+		if(blueLinks >= coopThreshold) blueRankingPoints++;
+		if(redLinks >= coopThreshold) redRankingPoints++;
+
+		// activation
+		if(blueStats.activation) blueRankingPoints++;
+		if(redStats.activation) redRankingPoints++;
+
+		// tie/win
+		if(blueStats.winResult == WinResult.tie) blueRankingPoints++;
+		if(blueStats.winResult == WinResult.victory) blueRankingPoints += 2;
+		if(redStats.winResult == WinResult.tie) redRankingPoints++;
+		if(redStats.winResult == WinResult.victory) redRankingPoints += 2;
+
+		return ({
+			matchNumber: matchNumber,
+			coop: blueCoop && redCoop,
+			blue: {
+				...blueStats,
+				sustainability: blueLinks >= coopThreshold,
+				rankingPoints: blueRankingPoints
+
+			},
+			red: {
+				...redStats,
+				sustainability: redLinks >= coopThreshold,
+				rankingPoints: redRankingPoints
+			}
+		});
 	},
 
 	teamStats: async (teamNumber: number) => {
@@ -46,17 +167,17 @@ export const dataTransform = {
 		const allMatches = await db.getAllMatches();
 
 		const allMatchesPlayed = allMatches.filter(match => {
-			return match.team1Data.teamInfo.teamNumber == teamNumber
-				|| match.team2Data.teamInfo.teamNumber == teamNumber
-				|| match.team3Data.teamInfo.teamNumber == teamNumber;
-		});
+			return match.team1Data.teamNumber == teamNumber
+				|| match.team2Data.teamNumber == teamNumber
+				|| match.team3Data.teamNumber == teamNumber;
+		}).sort((a, b) => a.matchNumber - b.matchNumber);
 
 		let thisTeamID = 0;
 
 		const allTeamData = allMatchesPlayed.map(match => {
-			if(match.team1Data.teamInfo.teamNumber == teamNumber) { thisTeamID = 1; return match.team1Data };
-			if(match.team2Data.teamInfo.teamNumber == teamNumber) { thisTeamID = 2; return match.team2Data };
-			if(match.team3Data.teamInfo.teamNumber == teamNumber) { thisTeamID = 3; return match.team3Data };
+			if(match.team1Data.teamNumber == teamNumber) { thisTeamID = 1; return match.team1Data };
+			if(match.team2Data.teamNumber == teamNumber) { thisTeamID = 2; return match.team2Data };
+			if(match.team3Data.teamNumber == teamNumber) { thisTeamID = 3; return match.team3Data };
 		});
 
 		let heatMap: { top: number[], mid: number[], low: number[] } = {
@@ -72,9 +193,10 @@ export const dataTransform = {
 		} = { top: [], mid: [], low: [] };
 
 		let scoreTotals: { top: number[], mid: number[], low: number[] } = { top: [], mid: [], low: [] };
-
+		let linkTotals: { top: number[], mid: number[], low: number[] } = { top: [], mid: [], low: [] };
+		
 		allMatchesPlayed.forEach(match => {
-			RowTypes.forEach(row => {
+			RowType.forEach(row => {
 				const scoreRow = match.scoreGrid[row];
 				let scoreSum = { cubes: 0, cones: 0 };
 				scoreRow.forEach((score, column) => {
@@ -83,6 +205,22 @@ export const dataTransform = {
 					if(score.item == ItemType.cube) scoreSum.cubes++;
 					if(score.item != ItemType.none) heatMap[row][column]++;
 				});
+
+				let rowLinks = 0;
+				for(let i = 0; i <= 6; i++) {
+					if(scoreRow[i + 0].item != ItemType.none
+					&& scoreRow[i + 1].item != ItemType.none
+					&& scoreRow[i + 2].item != ItemType.none) {
+						// link found, calculate team contribution
+						if(scoreRow[i + 0].teamID == thisTeamID) rowLinks++;
+						if(scoreRow[i + 1].teamID == thisTeamID) rowLinks++;
+						if(scoreRow[i + 2].teamID == thisTeamID) rowLinks++;
+						i += 3;
+					}
+				}
+				rowLinks /= 3;
+				
+				linkTotals[row].push(rowLinks);
 				itemTotals[row].push(scoreSum);
 				scoreTotals[row].push(scoreSum.cones + scoreSum.cubes);
 			});
@@ -96,7 +234,8 @@ export const dataTransform = {
 			emojis: allTeamData.map(t => t && extractEmojis(t.notes)).filter(emojis => emojis && emojis.length > 0).map(a => a?.[0]),
 			
 			matches: {
-				played: allMatchesPlayed.length,
+				played: allMatchesPlayed.map(match => ({ matchNumber: match.matchNumber, alliance: match.alliance, winResult: match.winResult })),
+				numberPlayed: allMatchesPlayed.length,
 				won: allMatchesPlayed.filter(match => match.winResult == WinResult.victory).length,
 				lost: allMatchesPlayed.filter(match => match.winResult == WinResult.defeat).length,
 				tie: allMatchesPlayed.filter(match => match.winResult == WinResult.tie).length,
@@ -112,8 +251,11 @@ export const dataTransform = {
 			},
 
 			teleop: {
-				scoreGrid: RowTypes.reduce((grid, row) => {
+				scoreGrid: RowType.reduce((grid, row) => {
 					grid[row] = {
+						linkTotals: linkTotals[row],
+						rawLinkTotal: sum(linkTotals[row]),
+						meanLinks: mean(linkTotals[row]),
 						heatMap: heatMap[row],
 						totals: scoreTotals[row],
 						itemTotals: itemTotals[row],

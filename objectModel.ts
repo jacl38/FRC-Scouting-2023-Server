@@ -7,15 +7,15 @@ export enum WinResult { defeat = "defeat", tie = "tie", victory = "victory" }
 // Game-specific object models (2023)
 export enum ChargeType { none = "none", docked = "docked", charged = "charged" }
 export enum ItemType { none = "none", cube = "cube", cone = "cone" }
-export const RowTypes = ["top", "mid", "low"] as const;
+export const RowType = ["top", "mid", "low"] as const;
 
-export class TeamInfo {
-	@prop({ required: true, type: Number }) public teamNumber!: number;
-}
+// export class TeamInfo {
+// 	@prop({ required: true, type: Number }) public teamNumber!: number;
+// }
 
 export class TeamData {
-	@prop({ required: true, type: TeamInfo })
-	public teamInfo!: TeamInfo;
+	@prop({ required: true, type: Number })
+	public teamNumber!: number;
 
 	@prop({ required: true, type: Number })
 	public id!: 0 | 1 | 2 | 3;
@@ -84,7 +84,7 @@ export class MatchData {
 			autoMobility: false,
 			autoCharge: ChargeType.none,
 			endCharge: ChargeType.none,
-			teamInfo: { teamNumber: 0 },
+			teamNumber: 0,
 			notes: ""
 		}
 		this.team2Data = {
@@ -92,7 +92,7 @@ export class MatchData {
 			autoMobility: false,
 			autoCharge: ChargeType.none,
 			endCharge: ChargeType.none,
-			teamInfo: { teamNumber: 0 },
+			teamNumber: 0,
 			notes: ""
 		}
 		this.team3Data = {
@@ -100,14 +100,15 @@ export class MatchData {
 			autoMobility: false,
 			autoCharge: ChargeType.none,
 			endCharge: ChargeType.none,
-			teamInfo: { teamNumber: 0 },
+			teamNumber: 0,
 			notes: ""
 		}
 	}
 }
 
+
 export const MatchDataModel = getModelForClass(MatchData);
-export const MatchDataCollection = mongoose.connection.collection("matchdatas");
+export const MatchDataCollection = mongoose.connection.collection("matchdatas2023");
 
 import * as xmljs from "xml2js";
 
@@ -135,7 +136,7 @@ export const decodeXml = (xmlString: string) => {
 
 			return {
 				id: id,
-				teamInfo: { teamNumber: teamNumber },
+				teamNumber: teamNumber,
 				autoMobility: autoMobility,
 				autoCharge: autoChargeType as ChargeType,
 				endCharge: endChargeType as ChargeType,

@@ -11,13 +11,16 @@ const router = express.Router();
 // Aggregated team stats route
 router.get("/data", async (request, response) => {
 	const allTeams = await dataTransform.allTeams();
+	const allMatches = (await db.getAllMatches()).map(match => match.matchNumber);
 	const allTeamStats = await Promise.all(allTeams.map(async teamNumber => await dataTransform.teamStats(teamNumber)));
+	const allMatchStats = await Promise.all(allMatches.map(async match => await dataTransform.matchStats(match)));
 
 	const statsObject = {
 		matches: await db.getAllMatches(),
 		teamList: allTeams,
 		stats: {
-			teams: allTeamStats
+			teams: allTeamStats,
+			matches: allMatchStats
 		}
 	}
 	response.send(statsObject);
@@ -28,7 +31,7 @@ router.get("/data", async (request, response) => {
 router.get("/submit", async (request, response) => {
 	response.send(`
 		<title>Submission Upload Route</title>
-		Enter this address in your scouting app to submit data
+		Submission Upload Route
 	`);
 });
 router.post("/submit", async (request, response) => {
