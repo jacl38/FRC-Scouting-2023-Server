@@ -11,13 +11,17 @@ const router = express.Router();
 // Aggregated team stats route
 router.get("/data", async (request, response) => {
 	const allTeams = await dataTransform.allTeams();
+
 	const allMatches = (await db.getAllMatches()).map(match => match.matchNumber);
+
 	const allTeamStats = await Promise.all(allTeams.map(async teamNumber => await dataTransform.teamStats(teamNumber)));
-	const allMatchStats = await Promise.all(allMatches.map(async match => await dataTransform.matchStats(match)));
+	const matchBounds = await dataTransform.matchBounds();
+	const allMatchStats = await Promise.all([...Array(matchBounds.max - matchBounds.min + 1)].map(async (_, matchNumber) => await dataTransform.matchStats(matchNumber + 1)));
 
 	const statsObject = {
 		matches: await db.getAllMatches(),
 		teamList: allTeams,
+		matchBounds: await dataTransform.matchBounds(),
 		stats: {
 			teams: allTeamStats,
 			matches: allMatchStats

@@ -40,6 +40,15 @@ export const dataTransform = {
 		return [...allTeams].sort((a, b) => a - b);
 	},
 
+	matchBounds: async () => {
+		const allMatches = await db.getAllMatches();
+
+		const min = Math.min(...allMatches.map(m => m.matchNumber));
+		const max = Math.max(...allMatches.map(m => m.matchNumber));
+
+		return ({ min: min, max: max });
+	},
+
 	matchStats: async (matchNumber: number) => {
 		const matchStatsPerAlliance = async (matchNumber: number, alliance: AllianceType) => {
 			const matchData = (await db.getAllMatches()).find(match => match.matchNumber == matchNumber && match.alliance == alliance);
@@ -116,46 +125,49 @@ export const dataTransform = {
 
 		const blueStats = await matchStatsPerAlliance(matchNumber, AllianceType.blue);
 		const redStats = await matchStatsPerAlliance(matchNumber, AllianceType.red);
-
-		if(blueStats == undefined || redStats == undefined) return;
-
-		const blueLinks = sum(blueStats?.linksPerTeam);
-		const redLinks = sum(redStats?.linksPerTeam);
-
-		const blueCoop = blueStats.coop;
-		const redCoop = redStats.coop;
-
-		const coopThreshold = blueCoop && redCoop ? 4 : 5;
-
+		
 		let blueRankingPoints = 0;
 		let redRankingPoints = 0;
+
+		let blueLinks = 0;
+		let blueCoop: boolean | null = null;
+		if(blueStats != undefined) {
+			blueLinks = sum(blueStats?.linksPerTeam);
+			blueCoop = blueStats.coop;
+			if(blueStats.activation) blueRankingPoints++;
+			if(blueStats.winResult == WinResult.tie) blueRankingPoints++;
+			if(blueStats.winResult == WinResult.victory) blueRankingPoints += 2;
+			
+		}
+
+		let redLinks = 0;
+		let redCoop: boolean | null = null;
+		if(redStats != undefined) {
+			redLinks = sum(redStats?.linksPerTeam);
+			redCoop = redStats.coop;
+			if(redStats.activation) redRankingPoints++;
+			if(redStats.winResult == WinResult.tie) redRankingPoints++;
+			if(redStats.winResult == WinResult.victory) redRankingPoints += 2;
+		}
+
+		const coopThreshold = blueCoop && redCoop ? 4 : 5;
 
 		// sustainability
 		if(blueLinks >= coopThreshold) blueRankingPoints++;
 		if(redLinks >= coopThreshold) redRankingPoints++;
-
-		// activation
-		if(blueStats.activation) blueRankingPoints++;
-		if(redStats.activation) redRankingPoints++;
-
-		// tie/win
-		if(blueStats.winResult == WinResult.tie) blueRankingPoints++;
-		if(blueStats.winResult == WinResult.victory) blueRankingPoints += 2;
-		if(redStats.winResult == WinResult.tie) redRankingPoints++;
-		if(redStats.winResult == WinResult.victory) redRankingPoints += 2;
 
 		return ({
 			matchNumber: matchNumber,
 			coop: blueCoop && redCoop,
 			blue: {
 				...blueStats,
-				sustainability: blueLinks >= coopThreshold,
+				sustainability: redStats != undefined ? blueLinks >= coopThreshold : null,
 				rankingPoints: blueRankingPoints
 
 			},
 			red: {
 				...redStats,
-				sustainability: redLinks >= coopThreshold,
+				sustainability: blueStats != undefined ? redLinks >= coopThreshold : null,
 				rankingPoints: redRankingPoints
 			}
 		});
